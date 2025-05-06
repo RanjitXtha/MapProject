@@ -1,21 +1,18 @@
 import axios from "axios";
+const bbox = "27.716,85.322,27.728,85.340";
 
 const query = `
-[out:json];
+[out:json][timeout:25];
 (
-  way["highway"](27.6,85.1,27.9,85.5);
+  way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)$"](${bbox});
+  >;
 );
 out body;
->;
-out skel qt;
 `;
 
 export const fetchOSMRoads = async () => {
-  const res = await axios.post("https://overpass-api.de/api/interpreter", query, {
-    headers: {
-      "Content-Type": "text/plain"
-    }
-  });
+  const res = await axios.get(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`)
 
   return res.data; // You’ll get nodes and ways here
 };
+ 
