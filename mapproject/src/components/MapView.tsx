@@ -8,6 +8,7 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useState } from "react";
+import TinyQueue from "tinyqueue";
 
 type Node = {
   id: number;
@@ -36,6 +37,26 @@ type CustomMarker = {
   type: MarkerType;
 };
 
+const touristDestinations = [
+  { name: "Pashupatinath Temple", lat: 27.710535, lon: 85.348830 },
+  { name: "Swayambhunath Temple", lat: 27.714938, lon: 85.290400 },
+  { name: "Kathmandu Durbar Square", lat: 27.704347, lon: 85.306735 },
+  { name: "Patan Durbar Square", lat: 27.673440, lon:  85.325030 },
+  { name: "Central Zoo", lat: 27.673186, lon: 85.310791 },
+  { name: "Thamel", lat: 27.717051, lon: 85.311263 },
+  { name: "Kopan Monastery", lat: 27.742359, lon: 85.363866 },
+  { name: "Narayanhiti Palace", lat: 27.714897, lon: 85.318094 },
+  { name: "Bhaktapur Durbar Square", lat: 27.6721, lon: 85.4281 },
+  { name: "National History Museum", lat: 27.714515, lon: 85.287831 },
+  { name: "Nyatapola Temple", lat: 27.6714097, lon: 85.4293725 },
+  { name: "Guhyeshwari Shaktipeeth Temple", lat: 27.711271, lon: 85.353363 },
+  { name: "Rani Pokhari", lat: 27.707814,  lon:85.315345 },
+  { name: "Boudhanath Stupa", lat: 27.721391, lon: 85.362053 },
+  { name: "Dharahara", lat: 27.700599, lon: 85.311866 },
+  { name: "Chandragiri Hill Cable Car", lat: 27.686226, lon: 85.214569 },
+
+];
+
 const haversineDistance = (a: { lat: number; lon: number }, b: { lat: number; lon: number }): number => {
   const R = 6371e3;
   const toRad = (deg: number) => deg * (Math.PI / 180);
@@ -50,65 +71,45 @@ const haversineDistance = (a: { lat: number; lon: number }, b: { lat: number; lo
   return R * 2 * Math.atan2(Math.sqrt(aCalc), Math.sqrt(1 - aCalc));
 };
 
-const buildGraph = (nodes: Node[], ways: Way[]): { graph: Graph; nodeMap: NodeMap } => {
-  const graph: Graph = {};
-  const nodeMap: NodeMap = {};
 
-  for (const node of nodes) {
-    nodeMap[node.id] = { lat: node.lat, lon: node.lon };
-    graph[node.id] = [];
-  }
+const aStar = (
+  startId: number,
+  goalId: number,
+  graph: Graph,
+  nodeMap: NodeMap
+): number[] | null => {
+  const queue = new TinyQueue<{ id: number; f: number }>([], (a, b) => a.f - b.f);
+  queue.push({ id: startId, f: haversineDistance(nodeMap[startId], nodeMap[goalId]) });
 
-  for (const way of ways) {
-    for (let i = 0; i < way.nodes.length - 1; i++) {
-      const a = way.nodes[i];
-      const b = way.nodes[i + 1];
-
-      if (nodeMap[a] && nodeMap[b]) {
-        const dist = haversineDistance(nodeMap[a], nodeMap[b]);
-        graph[a].push({ node: b, dist });
-        graph[b].push({ node: a, dist });
-      }
-    }
-  }
-
-  return { graph, nodeMap };
-};
-
-const aStar = (startId: number, goalId: number, graph: Graph, nodeMap: NodeMap): number[] | null => {
-  const openSet = new Set<number>([startId]);
   const cameFrom: Record<number, number> = {};
-
   const gScore: Record<number, number> = { [startId]: 0 };
-  const fScore: Record<number, number> = {
-    [startId]: haversineDistance(nodeMap[startId], nodeMap[goalId]),
-  };
 
-  while (openSet.size > 0) {
-    let current = [...openSet].reduce((a, b) =>
-      (fScore[a] ?? Infinity) < (fScore[b] ?? Infinity) ? a : b
-    );
+  const visited = new Set<number>();
 
-    if (current === goalId) {
-      const path: number[] = [current];
-      while (cameFrom[current] !== undefined) {
-        current = cameFrom[current];
-        path.push(current);
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    var currentId = current.id;
+
+    if (currentId === goalId) {
+      const path: number[] = [currentId];
+      while (cameFrom[currentId] !== undefined) {
+        currentId = cameFrom[currentId];
+        path.push(currentId);
       }
       return path.reverse();
     }
 
-    openSet.delete(current);
+    if (visited.has(currentId)) continue;
+    visited.add(currentId);
 
-    for (const neighbor of graph[current] || []) {
-      const tentativeG = (gScore[current] ?? Infinity) + neighbor.dist;
+    for (const neighbor of graph[currentId] || []) {
+      const tentativeG = gScore[currentId] + neighbor.dist;
 
       if (tentativeG < (gScore[neighbor.node] ?? Infinity)) {
-        cameFrom[neighbor.node] = current;
+        cameFrom[neighbor.node] = currentId;
         gScore[neighbor.node] = tentativeG;
-        fScore[neighbor.node] =
-          tentativeG + haversineDistance(nodeMap[neighbor.node], nodeMap[goalId]);
-        openSet.add(neighbor.node);
+        const f = tentativeG + haversineDistance(nodeMap[neighbor.node], nodeMap[goalId]);
+        queue.push({ id: neighbor.node, f });
       }
     }
   }
@@ -137,14 +138,18 @@ const MapView = () => {
 
   useEffect(() => {
     const loadData = async () => {
-      const res = await fetch("/interpreter.json");
+      const res = await fetch("/nodes_ways.json");
       const data = await res.json();
       
-      const nodes: Node[] = data.elements.filter((e: any) => e.type === "node");
-      const ways: Way[] = data.elements.filter((e: any) => e.type === "way");
+      const nodes: Node[] = data.nodes
+      const ways: Way[] = data.ways
       console.log(nodes.length);
       console.log(ways.length)
-      const { graph, nodeMap } = buildGraph(nodes, ways);
+
+      const res1 = await fetch("/graph.json");
+      const data1 = await res1.json();
+
+      const { graph, nodeMap } = data1;
       setGraphData({ graph, nodeMap });
     };
 
@@ -168,8 +173,10 @@ const MapView = () => {
 
       const startId = findNearestNodeId(...startNode);
       const endId = findNearestNodeId(...endNode);
-
+      const startTime = performance.now();
       const path = aStar(startId, endId, graphData.graph, graphData.nodeMap);
+      const endTime = performance.now();
+      console.log(`A* algorithm took ${(endTime - startTime).toFixed(2)} ms`);
       if (path) {
         const coords = path.map((id) => [
           graphData.nodeMap[id].lat,
@@ -213,6 +220,12 @@ const MapView = () => {
               <button onClick={() => updateMarkerType(i, "end")}>Set as End</button>
             </div>
           </Popup>
+        </Marker>
+      ))}
+
+{touristDestinations.map((place, idx) => (
+        <Marker key={idx} position={[place.lat, place.lon]}>
+          <Popup>{place.name}</Popup>
         </Marker>
       ))}
 

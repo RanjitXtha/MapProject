@@ -12,7 +12,7 @@ out body;
 
 export const fetchOSMRoads = async () => {
   const res = await axios.get(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`)
-
+  
   return res.data; // You’ll get nodes and ways here
 };
  
