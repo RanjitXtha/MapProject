@@ -37,7 +37,13 @@ type CustomMarker = {
   type: MarkerType;
 };
 
-const touristDestinations = [
+type Location = {
+  name: string;
+  lat: number;
+  lon: number;
+};
+
+const touristDestinations: Location[] = [
   { name: "Pashupatinath Temple", lat: 27.710535, lon: 85.348830 },
   { name: "Swayambhunath Temple", lat: 27.714938, lon: 85.290400 },
   { name: "Kathmandu Durbar Square", lat: 27.704347, lon: 85.306735 },
@@ -54,8 +60,15 @@ const touristDestinations = [
   { name: "Boudhanath Stupa", lat: 27.721391, lon: 85.362053 },
   { name: "Dharahara", lat: 27.700599, lon: 85.311866 },
   { name: "Chandragiri Hill Cable Car", lat: 27.686226, lon: 85.214569 },
+  { name: "White Monstary", lat: 27.686226, lon: 85.214569 },
 
 ];
+
+
+
+
+
+
 
 const haversineDistance = (a: { lat: number; lon: number }, b: { lat: number; lon: number }): number => {
   const R = 6371e3;
@@ -70,6 +83,36 @@ const haversineDistance = (a: { lat: number; lon: number }, b: { lat: number; lo
 
   return R * 2 * Math.atan2(Math.sqrt(aCalc), Math.sqrt(1 - aCalc));
 };
+
+
+
+
+
+const generateDistancesAndPaths = () => {
+  const paths: [number, number][][] = [];
+  const distances: {
+    from: string;
+    to: string;
+    distance: number;
+  }[] = [];
+
+  for (let i = 0; i < touristDestinations.length; i++) {
+    for (let j = i + 1; j < touristDestinations.length; j++) {
+      const from = touristDestinations[i];
+      const to = touristDestinations[j];
+      const distance = haversineDistance(from, to) / 1000; // convert to km
+
+      distances.push({ from: from.name, to: to.name, distance: +distance.toFixed(2) });
+      paths.push([
+        [from.lat, from.lon],
+        [to.lat, to.lon],
+      ]);
+    }
+  }
+
+  return { distances, paths };
+};
+
 
 
 const aStar = (
@@ -126,6 +169,10 @@ const ClickHandler = ({ onMapClick }: { onMapClick: (latlng: [number, number]) =
   return null;
 };
 
+const { distances, paths } = generateDistancesAndPaths();
+console.log(distances);
+console.log(paths);
+
 const MapView = () => {
   const [customMarkers, setCustomMarkers] = useState<CustomMarker[]>([]);
   const [startNode, setStartNode] = useState<[number, number] | null>(null);
@@ -135,6 +182,8 @@ const MapView = () => {
     graph: Graph;
     nodeMap: NodeMap;
   } | null>(null);
+
+  
 
   useEffect(() => {
     const loadData = async () => {
@@ -151,6 +200,8 @@ const MapView = () => {
 
       const { graph, nodeMap } = data1;
       setGraphData({ graph, nodeMap });
+
+  
     };
 
     loadData();
@@ -232,6 +283,18 @@ const MapView = () => {
       {pathCoords.length > 0 && (
         <Polyline positions={pathCoords} color="blue" weight={5} />
       )}
+
+      {/* Markers */}
+      {touristDestinations.map((place, index) => (
+        <Marker key={index} position={[place.lat, place.lon]}>
+          <Popup>{place.name}</Popup>
+        </Marker>
+      ))}
+
+      {/* Polylines */}
+      {paths.map((path, idx) => (
+        <Polyline key={idx} positions={path} color="purple" weight={1} />
+      ))}
     </MapContainer>
   );
 };
