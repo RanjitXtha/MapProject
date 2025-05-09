@@ -60,15 +60,7 @@ const touristDestinations: Location[] = [
   { name: "Boudhanath Stupa", lat: 27.721391, lon: 85.362053 },
   { name: "Dharahara", lat: 27.700599, lon: 85.311866 },
   { name: "Chandragiri Hill Cable Car", lat: 27.686226, lon: 85.214569 },
-  { name: "White Monstary", lat: 27.686226, lon: 85.214569 },
-
 ];
-
-
-
-
-
-
 
 const haversineDistance = (a: { lat: number; lon: number }, b: { lat: number; lon: number }): number => {
   const R = 6371e3;
@@ -86,32 +78,32 @@ const haversineDistance = (a: { lat: number; lon: number }, b: { lat: number; lo
 
 
 
+const getGreedyRoute = (start: Location, destinations: Location[]): Location[] => {
+  const visited: Location[] = [start];
+  const remaining = [...destinations];
 
+  let current = start;
 
-const generateDistancesAndPaths = () => {
-  const paths: [number, number][][] = [];
-  const distances: {
-    from: string;
-    to: string;
-    distance: number;
-  }[] = [];
+  while (remaining.length > 0) {
+    let nearestIdx = 0;
+    let minDistance = haversineDistance(current, remaining[0]);
 
-  for (let i = 0; i < touristDestinations.length; i++) {
-    for (let j = i + 1; j < touristDestinations.length; j++) {
-      const from = touristDestinations[i];
-      const to = touristDestinations[j];
-      const distance = haversineDistance(from, to) / 1000; // convert to km
-
-      distances.push({ from: from.name, to: to.name, distance: +distance.toFixed(2) });
-      paths.push([
-        [from.lat, from.lon],
-        [to.lat, to.lon],
-      ]);
+    for (let i = 1; i < remaining.length; i++) {
+      const distance = haversineDistance(current, remaining[i]);
+      if (distance < minDistance) {
+        nearestIdx = i;
+        minDistance = distance;
+      }
     }
+
+    current = remaining.splice(nearestIdx, 1)[0];
+    visited.push(current);
   }
 
-  return { distances, paths };
+  return visited;
 };
+
+
 
 
 
@@ -169,9 +161,19 @@ const ClickHandler = ({ onMapClick }: { onMapClick: (latlng: [number, number]) =
   return null;
 };
 
-const { distances, paths } = generateDistancesAndPaths();
-console.log(distances);
-console.log(paths);
+
+const me = { name: "Me", lat: 27.715, lon: 85.312 }; // example current location
+
+const destinations = [
+  { name: "Pashupatinath Temple", lat: 27.710535, lon: 85.348830 },
+  { name: "Swayambhunath Temple", lat: 27.714938, lon: 85.290400 },
+  { name: "Thamel", lat: 27.717051, lon: 85.311263 },
+  { name: "Kathmandu Durbar Square", lat: 27.704347, lon: 85.306735 },
+  { name: "Boudhanath Stupa", lat: 27.721391, lon: 85.362053 },
+  { name: "Bhaktapur Durbar Square", lat: 27.6721, lon: 85.4281 },
+   {name: "Chandragiri Hill Cable Car", lat: 27.686226, lon: 85.214569 },
+];
+
 
 const MapView = () => {
   const [customMarkers, setCustomMarkers] = useState<CustomMarker[]>([]);
@@ -183,6 +185,7 @@ const MapView = () => {
     nodeMap: NodeMap;
   } | null>(null);
 
+  
   
 
   useEffect(() => {
@@ -207,8 +210,23 @@ const MapView = () => {
     loadData();
   }, []);
 
+const [myloc,setMyloc] = useState<{lat:number, lon:number}| null>(null);
+useEffect(() => {
+  const watchId = navigator.geolocation.watchPosition(
+    (position) => {
+      const { latitude, longitude } = position.coords;
+      setMyloc({ lat: latitude, lon: longitude }); // ✅ Correct object format
+      console.log("Live location:", latitude, longitude);
+    },
+    (error) => console.error("Geolocation error:", error),
+    { enableHighAccuracy: true, maximumAge: 0 }
+  );
+
+  return () => navigator.geolocation.clearWatch(watchId); // cleanup on unmount
+}, []);
+
   useEffect(() => {
-    if (graphData && startNode && endNode) {
+    if (graphData && startNode) {
       const findNearestNodeId = (lat: number, lon: number): number => {
         let nearestId = -1;
         let minDist = Infinity;
@@ -222,23 +240,69 @@ const MapView = () => {
         return nearestId;
       };
 
-      const startId = findNearestNodeId(...startNode);
-      const endId = findNearestNodeId(...endNode);
-      const startTime = performance.now();
-      const path = aStar(startId, endId, graphData.graph, graphData.nodeMap);
-      const endTime = performance.now();
-      console.log(`A* algorithm took ${(endTime - startTime).toFixed(2)} ms`);
-      if (path) {
-        const coords = path.map((id) => [
-          graphData.nodeMap[id].lat,
-          graphData.nodeMap[id].lon,
-        ] as [number, number]);
-        setPathCoords(coords);
-      } else {
-        setPathCoords([]);
-        console.warn("No path found.");
-      }
+
+      const route = getGreedyRoute(me, destinations);
+      console.log(route)
+    
+      const fullPath: [number, number][] = [];
+  
+      const runFullRoute = async () => {
+        for (let i = 0; i < route.length - 1; i++) {
+          const start = route[i];
+          const end = route[i + 1];
+  
+          const startId = findNearestNodeId(start.lat, start.lon);
+          const endId = findNearestNodeId(end.lat, end.lon);
+  
+          const path = aStar(startId, endId, graphData.graph, graphData.nodeMap);
+          if (path) {
+            const coords = path.map((id) => [
+              graphData.nodeMap[id].lat,
+              graphData.nodeMap[id].lon,
+            ] as [number, number]);
+  
+            // Avoid duplicate point if path overlaps
+            if (fullPath.length > 0) coords.shift();
+  
+            fullPath.push(...coords);
+          }else{
+            setPathCoords([]);
+            console.warn("No path found.");
+          }
+        }
+  
+        setPathCoords(fullPath);
+      };
+  
+      runFullRoute();
+      
+  
+
+ 
+
+    //   const startId = findNearestNodeId(...startNode);
+    //   const endId = findNearestNodeId(...endNode);
+   
+
+     
+      
+    //   const startTime = performance.now();
+    //   const path = aStar(startId, endId, graphData.graph, graphData.nodeMap);
+      
+    //   const endTime = performance.now();
+    //   console.log(`A* algorithm took ${(endTime - startTime).toFixed(2)} ms`);
+    //   if (path) {
+    //     const coords = path.map((id) => [
+    //       graphData.nodeMap[id].lat,
+    //       graphData.nodeMap[id].lon,
+    //     ] as [number, number]);
+    //     setPathCoords(coords);
+    //   } else {
+    //     setPathCoords([]);
+    //     console.warn("No path found.");
+    //   }
     }
+
   }, [startNode, endNode, graphData]);
 
   const handleMapClick = (latlng: [number, number]) => {
@@ -284,17 +348,19 @@ const MapView = () => {
         <Polyline positions={pathCoords} color="blue" weight={5} />
       )}
 
-      {/* Markers */}
-      {touristDestinations.map((place, index) => (
-        <Marker key={index} position={[place.lat, place.lon]}>
-          <Popup>{place.name}</Popup>
-        </Marker>
-      ))}
+ 
 
-      {/* Polylines */}
-      {paths.map((path, idx) => (
-        <Polyline key={idx} positions={path} color="purple" weight={1} />
-      ))}
+<Marker key={'me'} position={[me.lat, me.lon]}>
+          <Popup>me</Popup>
+        </Marker>
+{
+myloc &&
+<Marker key={'myloc'} position={[myloc.lat, myloc.lon]}>
+          <Popup>My loc</Popup>
+        </Marker>
+
+   }
+
     </MapContainer>
   );
 };
