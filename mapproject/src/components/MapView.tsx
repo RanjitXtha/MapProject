@@ -103,10 +103,6 @@ const getGreedyRoute = (start: Location, destinations: Location[]): Location[] =
   return visited;
 };
 
-
-
-
-
 const aStar = (
   startId: number,
   goalId: number,
