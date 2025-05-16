@@ -213,6 +213,7 @@ useEffect(() => {
       const { latitude, longitude } = position.coords;
       setMyloc({ lat: latitude, lon: longitude }); // ✅ Correct object format
       console.log("Live location:", latitude, longitude);
+       console.log("Accuracy:", position.coords.accuracy, "meters");
     },
     (error) => console.error("Geolocation error:", error),
     { enableHighAccuracy: true, maximumAge: 0 }
