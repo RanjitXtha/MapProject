@@ -127,7 +127,10 @@ const aStar = (
         currentId = cameFrom[currentId];
         path.push(currentId);
       }
+      console.log("path:")
+      console.log(path)
       return path.reverse();
+      
     }
 
     if (visited.has(currentId)) continue;
